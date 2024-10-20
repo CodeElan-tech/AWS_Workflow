@@ -1,11 +1,12 @@
 import cv2
 import numpy as np
 import mlflow
+# import mlflow.log_metrics
 from ultralytics import YOLO
 from deep_sort.deep_sort.deep_sort.nn_matching import NearestNeighborDistanceMetric
 from deep_sort.deep_sort.deep_sort.tracker import Tracker
 from deep_sort.deep_sort.deep_sort.detection import Detection as DeepSortDetection
-from utils.utils import setup_mlflow, log_metrics, log_artifact
+import os
 
 # Define a mapping for object names to colors
 OBJECT_COLORS = {
@@ -17,11 +18,9 @@ OBJECT_COLORS = {
     'person': (255, 255, 255) # White for people
 }
 
-
-
 def detect_vehicles(video_path):
-    # Start a new MLflow run
-    with mlflow.start_run():
+    # Start the MLflow run
+    with mlflow.start_run(run_name="mlflow_vehicle_detection") as run:
         # Load the YOLO model
         model = YOLO('yolov8l.pt')  # Load the YOLOv8 model
 
@@ -29,7 +28,7 @@ def detect_vehicles(video_path):
         cap = cv2.VideoCapture(video_path)
 
         # Output video settings
-        output_video_path = 'C:/Users/oksha/Downloads/output.avi'  # Define output video path
+        output_video_path = 'output_tracked3.avi'  # Define output video path
         fourcc = cv2.VideoWriter_fourcc(*'XVID')  # Codec for output video
         frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
@@ -42,11 +41,12 @@ def detect_vehicles(video_path):
 
         # Initialize a dictionary to count detected objects
         vehicle_count = {key: 0 for key in OBJECT_COLORS.keys()}
-        mlflow.log_metrics(vehicle_count)
         counted_ids = set()
+
         track_labels = {}
 
         # Process each frame of the video
+        frame_num = 0
         while cap.isOpened():
             ret, frame = cap.read()
             if not ret:
@@ -61,16 +61,19 @@ def detect_vehicles(video_path):
 
             for result in results:
                 for detection in result.boxes:
-                    x1, y1, x2, y2 = detection.xyxy[0].cpu().numpy().astype(int)  # Bounding box coordinates
+                    x1, y1, x2, y2 = detection.xyxy[0].cpu().numpy().astype(int) # Bounding box coordinates
                     conf = detection.conf[0].item()  # Confidence score
-                    cls = detection.cls[0].item()  # Class index
+                    cls = detection.cls[0].item() # Class index
                     label = model.names[int(cls)]  # Get the label
+
+                    # Debug prints
+                    print(f'Detected: {label} (Confidence: {conf})')
 
                     # Check if the detected object is among the specified vehicle types
                     if label in OBJECT_COLORS and conf > 0.6:  # Adjust the confidence threshold as needed
                         width = x2 - x1
                         height = y2 - y1
-                        detection_obj = DeepSortDetection(tlwh=np.array([x1, y1, width, height]), confidence=conf, feature=np.random.rand(128).astype(np.float32))
+                        detection_obj = DeepSortDetection(tlwh=np.array([x1, y1, width, height]), confidence=conf, feature= np.random.rand(128).astype(np.float32))
                         detections.append(detection_obj)
                         detection_boxes.append((x1, y1, x2, y2, label))
 
@@ -80,7 +83,7 @@ def detect_vehicles(video_path):
             tracker.predict()
             tracker.update(detections)
 
-            # Iterate through tracks and update vehicle counts
+            # Iterate through tracks and draw bounding boxes
             for track in tracker.tracks:
                 if not track.is_confirmed() or track.time_since_update > 1:
                     continue
@@ -102,24 +105,35 @@ def detect_vehicles(video_path):
                     vehicle_count[label] += 1  # Count detected vehicles
                     counted_ids.add(track_id)  # Count detected vehicles
 
-            # Log the updated vehicle count
-            mlflow.log_metrics(vehicle_count)
+                # Draw bounding box and label
+                color = OBJECT_COLORS.get(label, (0, 255, 0))  # Default color if not found
+                cv2.rectangle(frame, (int(bbox[0]), int(bbox[1])), (int(bbox[2]), int(bbox[3])), color, 2)
+                cv2.putText(frame, f'{label} ID: {track_id}', (int(bbox[0]), int(bbox[1] - 10)), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
 
-        # # Log metrics to MLflow
-        mlflow.log_metrics(vehicle_count)
+            # Display the count of each vehicle type at the top-left corner
+            y_offset = 30
+            for vehicle, count in vehicle_count.items():
+                cv2.putText(frame, f'{vehicle}: {count}', (10, y_offset), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+                y_offset += 20
+
+            # Write the frame with detections to the output video
+            out.write(frame)
+
+            # Log metrics for each frame
+            frame_num += 1
+            for vehicle, count in vehicle_count.items():
+                mlflow.log_metric(f'{vehicle}_count', count, step=frame_num)
+
+        # Release video resources
+        cap.release()
+        out.release()
 
         # Log the output video as an artifact
         mlflow.log_artifact(output_video_path)
 
-        # Release video resources
-        cap.release()
-        out.release()  
+        # Log the final vehicle count
+        mlflow.log_metrics(vehicle_count)
+
+        # Log the run details
         print(f"Output video saved to: {output_video_path}")
-    mlflow.sklearn.log_model(model, "yolo v8 => v1")
-
-    # End the MLflow run
-    mlflow.end_run()
-
-
-# Usage
-# detect_vehicles('path_to_your_video.mp4')
+        print("MLflow run completed.")
