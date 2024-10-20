@@ -1,53 +1,36 @@
-import tkinter as tk
-from tkinter import filedialog, messagebox
 from tracker import detect_vehicles  # Import the detect_vehicles function
 import mlflow
-from utils.utils import  setup_mlflow, log_metrics, log_artifact, log_params, start_run, end_run
-# setup_mlflow('vehicle-detection-experiment')
-class VehicleDetectionApp:
-    def __init__(self, root):
-        self.root = root
-        self.root.title("Vehicle Detection App")
-        self.setup_gui()
-        # mlflow.set_experiment('Experiment-123')
+from utils.utils import setup_mlflow, log_metrics, log_artifact, log_params, start_run, end_run
 
-    def setup_gui(self):
-        # Video Selection
-        video_label = tk.Label(self.root, text="Select Video File:")
-        video_label.pack()
-        self.video_entry = tk.Entry(self.root, width=50)
-        self.video_entry.pack()
-        video_button = tk.Button(self.root, text="Browse", command=self.select_video)
-        video_button.pack()
-        # log_artifact(video_label)
+# Hardcoded video path
+DEFAULT_VIDEO_PATH = 'H:/codeelan_git/Object-Detection-master/Object-Detection-master/sort_video.mp4'
 
-        # Start Button
-        start_button = tk.Button(self.root, text="Start Detection", command=self.start_detection)
-        start_button.pack()
+def start_detection(video_path=DEFAULT_VIDEO_PATH):
+    if not video_path:
+        raise FileNotFoundError("Video file path is not provided.")
 
-    def select_video(self):
-        file_path = filedialog.askopenfilename(title="Select Video File", filetypes=(("Video Files", "*.mp4;*.avi"), ("All Files", "*.*")))
-        if file_path:
-            self.video_entry.delete(0, tk.END)
-            self.video_entry.insert(0, file_path)
+    # Start MLflow logging
+    # setup_mlflow('vehicle-detection-experiment')
+    # start_run()
+    
+    # Call the detect_vehicles function here
+    detect_vehicles(video_path)
 
-    def start_detection(self):
-        video_path = self.video_entry.get()
+    # Optionally log artifacts or metrics
+    # log_metrics(vehicle_count)
+    # log_artifact(output_video_path)
 
-        if not video_path:
-            messagebox.showerror("Error", "Please select a video file.")
-            return
-
-        # Call the detect_vehicles function here
-        detect_vehicles(video_path)
-        # if detect_vehicles():
-        #     log_metrics(vehicle_count)
-        #     log_artifact(output_video_path)
+    # End MLflow run
+    # end_run()
 
 def main():
-    root = tk.Tk()
-    app = VehicleDetectionApp(root)
-    root.mainloop()
+    # Start vehicle detection with the default path
+    try:
+        start_detection()
+    except FileNotFoundError as e:
+        print(f"Error: {e}")
+    except Exception as e:
+        print(f"An unexpected error occurred: {e}")
 
 if __name__ == "__main__":
     main()
