@@ -1,5 +1,7 @@
 name: Object-Detection-Model
-conda_env: conda.yaml
+
+docker_env:
+  image: my_object_detection_image  
 
 entry_points:
   main:
@@ -7,8 +9,5 @@ entry_points:
   
   run_all:
     command: |
-      python main.py && python try.py && mlflow run . -e run_ui
+      python main.py && python try.py 
   
-  run_ui:
-    command: |
-      mlflow ui --host 127.0.0.1 --port 5000
