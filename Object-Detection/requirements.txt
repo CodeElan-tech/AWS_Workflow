@@ -3,3 +3,5 @@ opencv-python-headless
 ultralytics
 tkinter
 argparse
+os
+numpy
