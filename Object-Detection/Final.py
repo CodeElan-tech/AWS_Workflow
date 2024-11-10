@@ -28,13 +28,6 @@ def adjust_for_day_or_night(frame, time_of_day):
     return frame
 
 def detect_vehicles(model_path, video_path, output_video_path, selected_types, time_of_day):
-    # Set the MLflow tracking URI dynamically
-    #mlflow.set_tracking_uri(f"file:///{mlflow_dir}")
-
-    # Ensure the directory exists
-    #if not os.path.exists(mlflow_dir):
-        #os.makedirs(mlflow_dir)
-
     # Start an MLflow run
     with mlflow.start_run(run_name="mlflow_vehicle_detection") as run:
         # Log input parameters to MLflow
@@ -54,6 +47,11 @@ def detect_vehicles(model_path, video_path, output_video_path, selected_types, t
         # Initialize the video capture
         cap = cv2.VideoCapture(video_path)
 
+        # Check if video is opened successfully
+        if not cap.isOpened():
+            print("Error: Unable to open video file.")
+            return
+
         # Output video settings
         fourcc = cv2.VideoWriter_fourcc(*'XVID')
         frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -71,6 +69,7 @@ def detect_vehicles(model_path, video_path, output_video_path, selected_types, t
         while cap.isOpened():
             ret, frame = cap.read()
             if not ret:
+                print(f"Failed to read frame {frame_count}")
                 break
 
             frame = adjust_for_day_or_night(frame, time_of_day)
@@ -157,8 +156,11 @@ def detect_vehicles(model_path, video_path, output_video_path, selected_types, t
 
         # Capture a screenshot of the last processed frame as an artifact
         screenshot_path = "last_frame_screenshot.jpg"
-        cv2.imwrite(screenshot_path, frame)
-        mlflow.log_artifact(screenshot_path)
+        if frame is not None and frame.size > 0:
+            cv2.imwrite(screenshot_path, frame)
+            mlflow.log_artifact(screenshot_path)
+        else:
+            print(f"No valid frame to capture at frame count {frame_count}, skipping screenshot.")
 
         cap.release()
         print(f"Output video saved to: {output_video_path}")
@@ -171,7 +173,6 @@ if __name__ == "__main__":
     parser.add_argument("output_video_path", type=str, help="Path to save the output video")
     parser.add_argument("time_of_day", type=str, choices=["day", "night"], help="Time of day: 'day' or 'night'")
     parser.add_argument("--selected_types", type=str, nargs="+", default=['car', 'motorcycle', 'truck', 'bus', 'bicycle', 'person'], help="Types of objects to detect")
-    #parser.add_argument("mlflow_dir", type=str, help="Path to store MLflow logs")
     args = parser.parse_args()
 
     detect_vehicles(args.model_path, args.video_path, args.output_video_path, args.selected_types, args.time_of_day)
