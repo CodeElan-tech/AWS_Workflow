@@ -174,4 +174,4 @@ if __name__ == "__main__":
     #parser.add_argument("mlflow_dir", type=str, help="Path to store MLflow logs")
     args = parser.parse_args()
 
-    detect_vehicles(args.model_path, args.video_path, args.output_video_path, args.selected_types, args.time_of_day, args.mlflow_dir)
+    detect_vehicles(args.model_path, args.video_path, args.output_video_path, args.selected_types, args.time_of_day)
