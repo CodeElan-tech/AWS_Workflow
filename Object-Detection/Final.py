@@ -27,13 +27,13 @@ def adjust_for_day_or_night(frame, time_of_day):
         frame = cv2.convertScaleAbs(frame, alpha=1.5, beta=30)
     return frame
 
-def detect_vehicles(model_path, video_path, output_video_path, selected_types, time_of_day, mlflow_dir):
+def detect_vehicles(model_path, video_path, output_video_path, selected_types, time_of_day):
     # Set the MLflow tracking URI dynamically
-    mlflow.set_tracking_uri(f"file:///{mlflow_dir}")
+    #mlflow.set_tracking_uri(f"file:///{mlflow_dir}")
 
     # Ensure the directory exists
-    if not os.path.exists(mlflow_dir):
-        os.makedirs(mlflow_dir)
+    #if not os.path.exists(mlflow_dir):
+        #os.makedirs(mlflow_dir)
 
     # Start an MLflow run
     with mlflow.start_run(run_name="mlflow_vehicle_detection") as run:
@@ -171,7 +171,7 @@ if __name__ == "__main__":
     parser.add_argument("output_video_path", type=str, help="Path to save the output video")
     parser.add_argument("time_of_day", type=str, choices=["day", "night"], help="Time of day: 'day' or 'night'")
     parser.add_argument("--selected_types", type=str, nargs="+", default=['car', 'motorcycle', 'truck', 'bus', 'bicycle', 'person'], help="Types of objects to detect")
-    parser.add_argument("mlflow_dir", type=str, help="Path to store MLflow logs")
+    #parser.add_argument("mlflow_dir", type=str, help="Path to store MLflow logs")
     args = parser.parse_args()
 
     detect_vehicles(args.model_path, args.video_path, args.output_video_path, args.selected_types, args.time_of_day, args.mlflow_dir)
