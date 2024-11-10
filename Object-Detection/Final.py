@@ -28,8 +28,11 @@ def adjust_for_day_or_night(frame, time_of_day):
     return frame
 
 def detect_vehicles(model_path, video_path, output_video_path, selected_types, time_of_day):
+    experiment_name = "mlflow_vehicle_detection"
+    mlflow.set_experiment(experiment_name)
+
     # Start an MLflow run
-    with mlflow.start_run(run_name="mlflow_vehicle_detection") as run:
+    with mlflow.start_run(run_name="mlflow_v  ehicle_detection") as run:
         # Log input parameters to MLflow
         mlflow.log_param("model_path", model_path)
         mlflow.log_param("video_path", video_path)
