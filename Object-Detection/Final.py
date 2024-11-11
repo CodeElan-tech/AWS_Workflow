@@ -32,6 +32,9 @@ def detect_vehicles(model_path, video_path, output_video_path, selected_types, t
     # Set device to GPU if available, otherwise use CPU
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+    # Print GPU availability status
+    print("Is CUDA available?:", torch.cuda.is_available())
+
     experiment_name = "mlflow_vehicle_detection"
     mlflow.set_experiment(experiment_name)
 
@@ -183,4 +186,5 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     detect_vehicles(args.model_path, args.video_path, args.output_video_path, args.selected_types, args.time_of_day)
+
 
