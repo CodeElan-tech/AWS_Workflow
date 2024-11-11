@@ -4,6 +4,7 @@ import cv2
 import numpy as np
 import argparse
 import mlflow
+import torch
 from ultralytics import YOLO
 from deep_sort.deep_sort.deep_sort.nn_matching import NearestNeighborDistanceMetric
 from deep_sort.deep_sort.deep_sort.tracker import Tracker
@@ -28,11 +29,14 @@ def adjust_for_day_or_night(frame, time_of_day):
     return frame
 
 def detect_vehicles(model_path, video_path, output_video_path, selected_types, time_of_day):
+    # Set device to GPU if available, otherwise use CPU
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
     experiment_name = "mlflow_vehicle_detection"
     mlflow.set_experiment(experiment_name)
 
     # Start an MLflow run
-    with mlflow.start_run(run_name="mlflow_v  ehicle_detection") as run:
+    with mlflow.start_run(run_name="mlflow_vehicle_detection") as run:
         # Log input parameters to MLflow
         mlflow.log_param("model_path", model_path)
         mlflow.log_param("video_path", video_path)
@@ -44,8 +48,8 @@ def detect_vehicles(model_path, video_path, output_video_path, selected_types, t
         for key in vehicle_count:
             mlflow.log_metric(f"{key}_count", 0)
 
-        # Load the YOLOv8 model
-        model_yolov8 = YOLO(model_path)
+        # Load the YOLOv8 model on the specified device
+        model_yolov8 = YOLO(model_path).to(device)
 
         # Initialize the video capture
         cap = cv2.VideoCapture(video_path)
