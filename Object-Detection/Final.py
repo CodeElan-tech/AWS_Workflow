@@ -183,3 +183,4 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     detect_vehicles(args.model_path, args.video_path, args.output_video_path, args.selected_types, args.time_of_day)
+
