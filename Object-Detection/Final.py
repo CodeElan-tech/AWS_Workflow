@@ -1,9 +1,9 @@
+
 import os
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
 import cv2
 import numpy as np
 import argparse
-import mlflow
 import torch
 from ultralytics import YOLO
 from deep_sort.deep_sort.deep_sort.nn_matching import NearestNeighborDistanceMetric
@@ -35,146 +35,107 @@ def detect_vehicles(model_path, video_path, output_video_path, selected_types, t
     # Print GPU availability status
     print("Is CUDA available?:", torch.cuda.is_available())
 
-    experiment_name = "mlflow_vehicle_detection"
-    mlflow.set_experiment(experiment_name)
+    # Load the YOLOv8 model on the specified device
+    model_yolov8 = YOLO(model_path).to(device)
 
-    # Start an MLflow run
-    with mlflow.start_run(run_name="mlflow_vehicle_detection") as run:
-        # Log input parameters to MLflow
-        mlflow.log_param("model_path", model_path)
-        mlflow.log_param("video_path", video_path)
-        mlflow.log_param("output_video_path", output_video_path)
-        mlflow.log_param("selected_types", selected_types)
-        mlflow.log_param("time_of_day", time_of_day)
+    # Initialize the video capture
+    cap = cv2.VideoCapture(video_path)
 
-        # Log initial metrics (vehicle count as 0)
-        for key in vehicle_count:
-            mlflow.log_metric(f"{key}_count", 0)
+    # Check if video is opened successfully
+    if not cap.isOpened():
+        print("Error: Unable to open video file.")
+        return
 
-        # Load the YOLOv8 model on the specified device
-        model_yolov8 = YOLO(model_path).to(device)
+    # Output video settings
+    fourcc = cv2.VideoWriter_fourcc(*'XVID')
+    frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    fps = int(cap.get(cv2.CAP_PROP_FPS))
+    out = cv2.VideoWriter(output_video_path, fourcc, fps, (frame_width, frame_height))
 
-        # Initialize the video capture
-        cap = cv2.VideoCapture(video_path)
+    # Initialize the DeepSORT tracker
+    metric = NearestNeighborDistanceMetric("cosine", matching_threshold=0.4, budget=100)
+    tracker = Tracker(metric, max_age=15, n_init=3)
 
-        # Check if video is opened successfully
-        if not cap.isOpened():
-            print("Error: Unable to open video file.")
-            return
+    track_labels = {}
 
-        # Output video settings
-        fourcc = cv2.VideoWriter_fourcc(*'XVID')
-        frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        fps = int(cap.get(cv2.CAP_PROP_FPS))
-        out = cv2.VideoWriter(output_video_path, fourcc, fps, (frame_width, frame_height))
+    frame_count = 0  # Track number of frames processed
+    while cap.isOpened():
+        ret, frame = cap.read()
+        if not ret:
+            print(f"Failed to read frame {frame_count}")
+            break
 
-        # Initialize the DeepSORT tracker
-        metric = NearestNeighborDistanceMetric("cosine", matching_threshold=0.4, budget=100)
-        tracker = Tracker(metric, max_age=15, n_init=3)
+        frame = adjust_for_day_or_night(frame, time_of_day)
+        frame_count += 1
 
-        track_labels = {}
+        # Perform object detection using YOLOv8
+        results_yolov8 = model_yolov8(frame)
 
-        frame_count = 0  # Track number of frames processed
-        while cap.isOpened():
-            ret, frame = cap.read()
-            if not ret:
-                print(f"Failed to read frame {frame_count}")
-                break
+        detections = []
+        detection_boxes = []
 
-            frame = adjust_for_day_or_night(frame, time_of_day)
-            frame_count += 1
+        # Process YOLOv8 results
+        for result in results_yolov8:
+            for detection in result.boxes:
+                x1, y1, x2, y2 = detection.xyxy[0].cpu().numpy().astype(int)
+                conf = detection.conf[0].item()
+                cls = detection.cls[0].item()
+                label = model_yolov8.names[int(cls)]
 
-            # Perform object detection using YOLOv8
-            results_yolov8 = model_yolov8(frame)
+                # Check if the detected object is among the selected vehicle types
+                if label in selected_types and conf > 0.6:
+                    width = x2 - x1
+                    height = y2 - y1
 
-            detections = []
-            detection_boxes = []
+                    detection_obj = DeepSortDetection(tlwh=np.array([x1, y1, width, height]), confidence=conf,
+                                                      feature=np.random.rand(128).astype(np.float32))
+                    detections.append(detection_obj)
+                    detection_boxes.append((x1, y1, x2, y2, label))
 
-            # Process YOLOv8 results
-            for result in results_yolov8:
-                for detection in result.boxes:
-                    x1, y1, x2, y2 = detection.xyxy[0].cpu().numpy().astype(int)
-                    conf = detection.conf[0].item()
-                    cls = detection.cls[0].item()
-                    label = model_yolov8.names[int(cls)]
+                    track_labels[len(detections) - 1] = label
 
-                    # Check if the detected object is among the selected vehicle types
-                    if label in selected_types and conf > 0.6:
-                        width = x2 - x1
-                        height = y2 - y1
+        # Update tracker with the current detections
+        tracker.predict()
+        tracker.update(detections)
 
-                        detection_obj = DeepSortDetection(tlwh=np.array([x1, y1, width, height]), confidence=conf,
-                                                          feature=np.random.rand(128).astype(np.float32))
-                        detections.append(detection_obj)
-                        detection_boxes.append((x1, y1, x2, y2, label))
+        # Iterate through tracks and draw bounding boxes
+        for track in tracker.tracks:
+            if not track.is_confirmed():
+                continue
 
-                        track_labels[len(detections) - 1] = label
+            bbox = track.to_tlbr()
+            track_id = track.track_id
 
-            # Update tracker with the current detections
-            tracker.predict()
-            tracker.update(detections)
+            if track_id not in track_labels:
+                for (x1, y1, x2, y2, label) in detection_boxes:
+                    if abs(bbox[0] - x1) < 20 and abs(bbox[1] - y1) < 20 and abs(bbox[2] - x2) < 20 and abs(bbox[3] - y2) < 20:
+                        track_labels[track_id] = label
+                        break
 
-            # Iterate through tracks and draw bounding boxes
-            for track in tracker.tracks:
-                if not track.is_confirmed():
-                    continue
+            label = track_labels.get(track_id, 'Unknown')
 
-                bbox = track.to_tlbr()
-                track_id = track.track_id
+            # Count detected vehicles
+            if label in vehicle_count and track_id not in counted_ids:
+                vehicle_count[label] += 1
+                counted_ids.add(track_id)
 
-                if track_id not in track_labels:
-                    for (x1, y1, x2, y2, label) in detection_boxes:
-                        if abs(bbox[0] - x1) < 20 and abs(bbox[1] - y1) < 20 and abs(bbox[2] - x2) < 20 and abs(bbox[3] - y2) < 20:
-                            track_labels[track_id] = label
-                            break
+            # Draw bounding box and label
+            color = OBJECT_COLORS.get(label, (0, 255, 0))
+            cv2.rectangle(frame, (int(bbox[0]), int(bbox[1])), (int(bbox[2]), int(bbox[3])), color, 2)
+            cv2.putText(frame, f'{label} ID: {track_id}', (int(bbox[0]), int(bbox[1] - 10)), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
 
-                label = track_labels.get(track_id, 'Unknown')
+        # Display counts on the frame
+        count_text = ', '.join([f'{k}: {v}' for k, v in vehicle_count.items() if v > 0])
+        cv2.putText(frame, f'Counts: {count_text}', (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
 
-                # Count detected vehicles
-                if label in vehicle_count and track_id not in counted_ids:
-                    vehicle_count[label] += 1
-                    counted_ids.add(track_id)
+        # Write frame to output video
+        out.write(frame)
 
-                # Draw bounding box and label
-                color = OBJECT_COLORS.get(label, (0, 255, 0))
-                cv2.rectangle(frame, (int(bbox[0]), int(bbox[1])), (int(bbox[2]), int(bbox[3])), color, 2)
-                cv2.putText(frame, f'{label} ID: {track_id}', (int(bbox[0]), int(bbox[1] - 10)), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
-
-            # Display counts on the frame
-            count_text = ', '.join([f'{k}: {v}' for k, v in vehicle_count.items() if v > 0])
-            cv2.putText(frame, f'Counts: {count_text}', (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
-
-            # Write frame to output video
-            out.write(frame)
-
-            # Log metrics every 10 frames to avoid overwhelming the UI
-            if frame_count % 10 == 0:
-                for key, count in vehicle_count.items():
-                    mlflow.log_metric(f"{key}_count", count, step=frame_count)
-
-        # Log final vehicle count as metrics
-        for key, count in vehicle_count.items():
-            mlflow.log_metric(f"{key}_count_final", count)
-
-        # Log additional metrics
-        mlflow.log_metric("total_frames_processed", frame_count)
-
-        # Log the output video as an artifact
-        out.release()
-        mlflow.log_artifact(output_video_path)
-
-        # Capture a screenshot of the last processed frame as an artifact
-        screenshot_path = "last_frame_screenshot.jpg"
-        if frame is not None and frame.size > 0:
-            cv2.imwrite(screenshot_path, frame)
-            mlflow.log_artifact(screenshot_path)
-        else:
-            print(f"No valid frame to capture at frame count {frame_count}, skipping screenshot.")
-
-        cap.release()
-        print(f"Output video saved to: {output_video_path}")
-        print("Vehicle detection completed.")
+    out.release()
+    cap.release()
+    print(f"Output video saved to: {output_video_path}")
+    print("Vehicle detection completed.")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Vehicle Detection and Tracking")
@@ -186,5 +147,3 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     detect_vehicles(args.model_path, args.video_path, args.output_video_path, args.selected_types, args.time_of_day)
-
-
