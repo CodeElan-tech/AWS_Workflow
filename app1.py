@@ -79,20 +79,3 @@ if __name__ == "__main__":
     app.run(host='0.0.0.0', port=5000, debug=True)
 
 
-# Route to stop video capture
-@app.route("/stop/<camera_id>")
-def stop_video(camera_id):
-    global video_capture
-    with lock:
-        if camera_id in video_capture:
-            cap, _ = video_capture.pop(camera_id)
-            cap.release()
-
-    return f"Camera {camera_id} stopped."
-
-
-# Run the Flask app
-if __name__ == "__main__":
-    app.run(debug=True)
-
-
