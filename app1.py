@@ -1,118 +1,82 @@
 import cv2
-import threading
-import time
+import yt_dlp
+import numpy as np
 from flask import Flask, render_template, Response, request
+from ultralytics import YOLO  # Import YOLO from Ultralytics
 import subprocess
 
-# Initialize the Flask application
+# Initialize Flask app
 app = Flask(__name__)
+video_capture = None
 
-# Global variables for video capture and threading
-video_capture = {}
-lock = threading.Lock()
+# Path to your cookies file (exported manually or using --cookies-from-browser)
+cookies_file = "youtube_cookies.txt"
 
-# Function to get a YouTube stream URL using yt-dlp
-def get_youtube_stream_url(youtube_url):
-    """
-    Fetch the direct stream URL for a YouTube video using yt-dlp with cookies.
-    """
-    if not youtube_url:
-        raise ValueError("YouTube URL must not be empty.")
-
-    # Path to your cookies file (exported manually or using --cookies-from-browser)
-    cookies_file = "youtube_cookies.txt"
-
-    # yt-dlp command to fetch the direct stream URL
-    command = ['yt-dlp', '-g', '--cookies', cookies_file, youtube_url]
-
+# yt-dlp command to fetch the direct stream URL
+def get_stream_url(youtube_url):
     try:
-        result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
-        stream_url = result.stdout.strip()
-
-        # Ensure the result is valid
-        if not stream_url:
-            raise RuntimeError("yt-dlp returned an empty stream URL.")
-        
+        command = ['yt-dlp', '-g', '--cookies', cookies_file, youtube_url]
+        # Run the command to fetch the stream URL
+        stream_url = subprocess.check_output(command, stderr=subprocess.STDOUT).decode().strip()
         return stream_url
-
-    except subprocess.CalledProcessError as e:
-        error_message = f"Error fetching stream URL: {e.stderr.strip()}"
-        print(error_message)
-        raise RuntimeError(error_message)
-
     except Exception as e:
-        print(f"Unexpected error: {str(e)}")
-        raise
+        print(f"Error fetching stream URL: {e}")
+        return None
 
+# Load YOLOv8 model from Ultralytics (YOLOv8n is a lightweight version)
+model = YOLO('yolov8n.pt')  # Load the YOLOv8n model from Ultralytics
 
-# Function to capture video frames
-def capture_video(camera_id, stream_url):
+# Function to detect objects in the frame using YOLOv8
+def detect_objects(frame):
+    # Perform object detection on the frame using YOLOv8 model
+    results = model(frame)  # This will return the detection results
+    # Annotate frame with bounding boxes and labels
+    annotated_frame = results[0].plot()  # This renders the frame with bounding boxes
+    return annotated_frame
+
+# Video feed generator with YOLOv8 object detection
+def generate_frames():
     global video_capture
-    with lock:
-        if camera_id in video_capture:
-            return
+    while video_capture:
+        success, frame = video_capture.read()
+        if not success:
+            break
 
-    cap = cv2.VideoCapture(stream_url)
-    video_capture[camera_id] = cap
+        # Apply YOLO object detection to the frame
+        frame = detect_objects(frame)
 
-    while True:
-        with lock:
-            if camera_id not in video_capture:
-                break
+        # Encode the frame as JPEG for streaming
+        _, buffer = cv2.imencode('.jpg', frame)
+        frame = buffer.tobytes()
+        yield (b'--frame\r\n'
+               b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
 
-        ret, frame = cap.read()
-        if not ret:
-            print(f"Camera {camera_id}: Unable to fetch frame. Retrying...")
-            time.sleep(2)
-            continue
-
-        # Add your frame processing logic here if needed
-        cv2.putText(frame, f"Camera {camera_id}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-
-        # Store the frame in the global dictionary for video streaming
-        video_capture[camera_id] = (cap, frame)
-
-
-# Route for the main page
-@app.route("/", methods=["GET", "POST"])
+@app.route('/', methods=['GET', 'POST'])
 def index():
-    if request.method == "POST":
-        youtube_url = request.form.get("youtube_url")
-        camera_id = request.form.get("camera_id", "0")
+    global video_capture
 
-        if not youtube_url:
-            return "Error: YouTube URL is required."
+    stream_started = False
+    youtube_url = None
+    error_message = None
 
-        try:
-            # Fetch the stream URL and start capturing video
-            stream_url = get_youtube_stream_url(youtube_url)
-            threading.Thread(target=capture_video, args=(camera_id, stream_url), daemon=True).start()
-            return f"Camera {camera_id} started with YouTube URL: {youtube_url}"
+    if request.method == 'POST':
+        youtube_url = request.form['youtube_url']
+        stream_url = get_stream_url(youtube_url)
 
-        except Exception as e:
-            return f"Error: {str(e)}"
+        if stream_url:
+            video_capture = cv2.VideoCapture(stream_url)
+            stream_started = True
+        else:
+            error_message = "Failed to fetch the stream URL. Please try again."
 
-    return render_template("index.html")
+    return render_template('index.html', stream_started=stream_started, youtube_url=youtube_url, error_message=error_message)
 
+@app.route('/video_feed')
+def video_feed():
+    return Response(generate_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
-# Route to stream video feed
-@app.route("/video_feed/<camera_id>")
-def video_feed(camera_id):
-    def generate(camera_id):
-        global video_capture
-        while True:
-            with lock:
-                if camera_id not in video_capture:
-                    break
-
-                cap, frame = video_capture[camera_id]
-                if frame is not None:
-                    _, buffer = cv2.imencode('.jpg', frame)
-                    frame_data = buffer.tobytes()
-                    yield (b'--frame\r\n'
-                           b'Content-Type: image/jpeg\r\n\r\n' + frame_data + b'\r\n')
-
-    return Response(generate(camera_id), mimetype="multipart/x-mixed-replace; boundary=frame")
+if __name__ == "__main__":
+    app.run(host='0.0.0.0', port=5000, debug=True)
 
 
 # Route to stop video capture
