@@ -3,144 +3,29 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CodeElan Open CV Platform</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            background-color: #f4f4f4;
-            margin: 0;
-            padding: 0;
-        }
-
-        h1 {
-            background-color: #2C6B2F;  /* Green background */
-            color: white;
-            padding: 20px;
-            text-align: center;
-            font-size: 2em;
-        }
-
-        .content {
-            display: flex;
-            justify-content: center;
-            flex-wrap: wrap;
-            margin-top: 20px;
-        }
-
-        .stream-container {
-            margin: 10px;
-            border: 5px solid #2C6B2F; /* Green border around each stream */
-            padding: 5px;
-            background-color: white;
-        }
-
-        .stream-container h3 {
-            text-align: center;
-            color: #2C6B2F;
-        }
-
-        .stream-container img {
-            width: 100%;  /* Ensure the image fits the container */
-            height: auto;
-            border: 2px solid #2C6B2F;  /* Green border around each stream */
-        }
-
-        form {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            margin-top: 20px;
-        }
-
-        input[type="number"], input[type="url"] {
-            padding: 10px;
-            margin-bottom: 10px;
-            width: 100%;
-            max-width: 400px;
-            border: 2px solid #2C6B2F;
-            border-radius: 4px;
-        }
-
-        button {
-            padding: 10px 20px;
-            background-color: #2C6B2F;
-            color: white;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-        }
-
-        button:hover {
-            background-color: #225A26;
-        }
-
-        .error {
-            color: red;
-            font-weight: bold;
-        }
-    </style>
+    <title>YouTube Stream with YOLOv8 Object Detection</title>
 </head>
 <body>
-    <h1>Start YouTube Stream</h1>
-    <form method="POST">
-        <label for="youtube_url">YouTube URL:</label>
+    <h1>YouTube Stream with YOLOv8 Object Detection</h1>
+
+    <form action="/" method="post">
+        <label for="youtube_url">Enter YouTube URL:</label>
         <input type="text" id="youtube_url" name="youtube_url" required>
-        <br><br>
-        
-        <label for="camera_id">Camera ID:</label>
-        <input type="text" id="camera_id" name="camera_id" value="0">
-        <br><br>
-        
         <button type="submit">Start Stream</button>
     </form>
-    <h1>CodeElan Open CV Platform</h1>
 
-    <!-- Form for submitting YouTube links -->
-    <form method="POST">
-        <label for="link-count">Number of YouTube links:</label>
-        <input type="number" name="link-count" id="link-count" min="1" required><br><br>
-
-        <div id="youtube-links">
-            <!-- Dynamic input fields for YouTube URLs will be added here -->
+    {% if stream_started %}
+        <h3>Stream Started for: {{ youtube_url }}</h3>
+        <div>
+            <img src="{{ url_for('video_feed') }}" alt="Video Stream">
         </div>
-
-        <button type="submit">Submit Links</button>
-    </form>
-
-    <hr>
-
-    {% if youtube_links %}
-    <h2>Available Streams</h2>
-    <div class="content">
-        {% for link in youtube_links %}
-        <div class="stream-container">
-            <h3>Stream {{ loop.index }}: {{ link }}</h3>
-            <img src="{{ url_for('video_feed', index=loop.index0) }}" alt="Stream {{ loop.index }}">
-        </div>
-        {% endfor %}
-    </div>
+    {% elif error_message %}
+        <p style="color: red;">{{ error_message }}</p>
     {% endif %}
-
-    <script>
-        // Handle dynamic input fields based on the number of links
-        document.getElementById('link-count').addEventListener('input', function () {
-            const linkCount = parseInt(this.value);
-            const youtubeLinksContainer = document.getElementById('youtube-links');
-            youtubeLinksContainer.innerHTML = ''; // Clear existing fields
-
-            for (let i = 0; i < linkCount; i++) {
-                const input = document.createElement('input');
-                input.type = 'url';
-                input.name = `link-${i}`;
-                input.placeholder = `YouTube Link ${i+1}`;
-                youtubeLinksContainer.appendChild(input);
-                youtubeLinksContainer.appendChild(document.createElement('br'));
-            }
-        });
-    </script>
 
 </body>
 </html>
+>
 
 
 
